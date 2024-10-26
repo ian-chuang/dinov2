@@ -231,10 +231,16 @@ class DinoVisionTransformer(nn.Module):
 
         return x
 
-    def forward_features_list(self, x_list, masks_list):
+    def forward_features_list(self, x_list, masks_list, output_attentions=False):
         x = [self.prepare_tokens_with_masks(x, masks) for x, masks in zip(x_list, masks_list)]
+
+        all_self_attentions = () if output_attentions else None
+
         for blk in self.blocks:
-            x = blk(x)
+            outputs = blk(x, output_attentions=output_attentions)
+            x = outputs[0]
+            if output_attentions:
+                all_self_attentions = all_self_attentions + (outputs[1],)
 
         all_x = x
         output = []
@@ -247,18 +253,24 @@ class DinoVisionTransformer(nn.Module):
                     "x_norm_patchtokens": x_norm[:, self.num_register_tokens + 1 :],
                     "x_prenorm": x,
                     "masks": masks,
+                    "attentions": all_self_attentions,
                 }
             )
         return output
 
-    def forward_features(self, x, masks=None):
+    def forward_features(self, x, masks=None, output_attentions=False):
         if isinstance(x, list):
-            return self.forward_features_list(x, masks)
+            return self.forward_features_list(x, masks, output_attentions)
 
         x = self.prepare_tokens_with_masks(x, masks)
 
+        all_self_attentions = () if output_attentions else None
+
         for blk in self.blocks:
-            x = blk(x)
+            outputs = blk(x, output_attentions=output_attentions)
+            x = outputs[0]
+            if output_attentions:
+                all_self_attentions = all_self_attentions + (outputs[1],)
 
         x_norm = self.norm(x)
         return {
@@ -267,6 +279,7 @@ class DinoVisionTransformer(nn.Module):
             "x_norm_patchtokens": x_norm[:, self.num_register_tokens + 1 :],
             "x_prenorm": x,
             "masks": masks,
+            "attentions": all_self_attentions,
         }
 
     def _get_intermediate_layers_not_chunked(self, x, n=1):
@@ -320,19 +333,6 @@ class DinoVisionTransformer(nn.Module):
         if return_class_token:
             return tuple(zip(outputs, class_tokens))
         return tuple(outputs)
-    
-    def get_last_self_attention(self, x, masks=None):
-        if isinstance(x, list):
-            return self.forward_features_list(x, masks)
-
-        x = self.prepare_tokens_with_masks(x, masks)
-
-        # Run through model, at the last block just return the attention.
-        for i, blk in enumerate(self.blocks):
-            if i < len(self.blocks) - 1:
-                x = blk(x)
-            else: 
-                return blk(x, return_attention=True)
 
     def forward(self, *args, is_training=False, **kwargs):
         ret = self.forward_features(*args, **kwargs)

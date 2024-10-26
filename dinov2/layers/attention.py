@@ -53,7 +53,7 @@ class Attention(nn.Module):
         self.proj = nn.Linear(dim, dim, bias=proj_bias)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x: Tensor, return_attn=False) -> Tensor:
+    def forward(self, x: Tensor, output_attentions=False) -> Tensor:  # MODIFICATION (ian-chuang)
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
 
@@ -66,19 +66,20 @@ class Attention(nn.Module):
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
-
-        if return_attn:
-            return attn
         
-        return x
+        # MODIFICATION (ian-chuang)
+        outputs = (x, attn) if output_attentions else (x,)
+        return outputs
+        # END MODIFICATION (ian-chuang)
+        
 
 
 class MemEffAttention(Attention):
-    def forward(self, x: Tensor, attn_bias=None, return_attn=False) -> Tensor:
+    def forward(self, x: Tensor, attn_bias=None, output_attentions=False) -> Tensor: # MODIFICATION (ian-chuang)
         if not XFORMERS_AVAILABLE:
             if attn_bias is not None:
                 raise AssertionError("xFormers is required for using nested tensors")
-            return super().forward(x, return_attn)
+            return super().forward(x, output_attentions) # MODIFICATION (ian-chuang)
 
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads)
@@ -86,11 +87,16 @@ class MemEffAttention(Attention):
         q, k, v = unbind(qkv, 2)
 
         x = memory_efficient_attention(q, k, v, attn_bias=attn_bias)
-        if return_attn:
+        # MODIFICATION (ian-chuang)
+        if output_attentions:
             attn = x.permute(0, 2, 1, 3) @ v.permute(0, 2, 3, 1)
-            return attn
+        # END MODIFICATION (ian-chuang)
         x = x.reshape([B, N, C])
 
         x = self.proj(x)
         x = self.proj_drop(x)
-        return x
+
+        # MODIFICATION (ian-chuang)
+        outputs = (x, attn) if output_attentions else (x,)
+        return outputs
+        # END MODIFICATION (ian-chuang)
