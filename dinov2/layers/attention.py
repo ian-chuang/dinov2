@@ -60,15 +60,15 @@ class Attention(nn.Module):
         q, k, v = qkv[0] * self.scale, qkv[1], qkv[2]
         attn = q @ k.transpose(-2, -1)
 
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
+        attn_dist = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn_dist)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
         
         # MODIFICATION (ian-chuang)
-        outputs = (x, attn) if output_attentions else (x,)
+        outputs = (x, attn_dist) if output_attentions else (x,)
         return outputs
         # END MODIFICATION (ian-chuang)
         
@@ -76,6 +76,9 @@ class Attention(nn.Module):
 
 class MemEffAttention(Attention):
     def forward(self, x: Tensor, attn_bias=None, output_attentions=False) -> Tensor: # MODIFICATION (ian-chuang)
+
+        raise NotImplementedError("Memory efficient attention is not implemented yet")
+
         if not XFORMERS_AVAILABLE:
             if attn_bias is not None:
                 raise AssertionError("xFormers is required for using nested tensors")

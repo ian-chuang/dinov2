@@ -240,7 +240,9 @@ class DinoVisionTransformer(nn.Module):
             outputs = blk(x, output_attentions=output_attentions)
             x = outputs[0]
             if output_attentions:
-                all_self_attentions = all_self_attentions + (outputs[1],)
+                attn = outputs[1]
+                attn = attn[:, :, :, 1 + self.num_register_tokens:]
+                all_self_attentions = all_self_attentions + (attn,)
 
         all_x = x
         output = []
@@ -270,7 +272,9 @@ class DinoVisionTransformer(nn.Module):
             outputs = blk(x, output_attentions=output_attentions)
             x = outputs[0]
             if output_attentions:
-                all_self_attentions = all_self_attentions + (outputs[1],)
+                attn = outputs[1]
+                attn = attn[:, :, :, 1 + self.num_register_tokens:]
+                all_self_attentions = all_self_attentions + (attn,)
 
         x_norm = self.norm(x)
         return {
@@ -357,7 +361,7 @@ def vit_small(patch_size=16, num_register_tokens=0, **kwargs):
         depth=12,
         num_heads=6,
         mlp_ratio=4,
-        block_fn=partial(Block, attn_class=MemEffAttention),
+        # block_fn=partial(Block, attn_class=MemEffAttention),
         num_register_tokens=num_register_tokens,
         **kwargs,
     )
