@@ -68,21 +68,18 @@ class Attention(nn.Module):
         x = self.proj_drop(x)
         
         # MODIFICATION (ian-chuang)
-        outputs = (x, attn_dist) if output_attentions else (x,)
+        outputs = (x, attn_dist) if output_attentions else (x, None)
         return outputs
         # END MODIFICATION (ian-chuang)
         
 
 
 class MemEffAttention(Attention):
-    def forward(self, x: Tensor, attn_bias=None, output_attentions=False) -> Tensor: # MODIFICATION (ian-chuang)
-
-        raise NotImplementedError("Memory efficient attention is not implemented yet")
-
+    def forward(self, x: Tensor, attn_bias=None, output_attentions=False) -> Tensor:
         if not XFORMERS_AVAILABLE:
             if attn_bias is not None:
                 raise AssertionError("xFormers is required for using nested tensors")
-            return super().forward(x, output_attentions) # MODIFICATION (ian-chuang)
+            return super().forward(x)
 
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads)
@@ -90,16 +87,8 @@ class MemEffAttention(Attention):
         q, k, v = unbind(qkv, 2)
 
         x = memory_efficient_attention(q, k, v, attn_bias=attn_bias)
-        # MODIFICATION (ian-chuang)
-        if output_attentions:
-            attn = x.permute(0, 2, 1, 3) @ v.permute(0, 2, 3, 1)
-        # END MODIFICATION (ian-chuang)
         x = x.reshape([B, N, C])
 
         x = self.proj(x)
         x = self.proj_drop(x)
-
-        # MODIFICATION (ian-chuang)
-        outputs = (x, attn) if output_attentions else (x,)
-        return outputs
-        # END MODIFICATION (ian-chuang)
+        return (x, None)

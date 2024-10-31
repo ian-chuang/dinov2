@@ -119,7 +119,7 @@ class Block(nn.Module):
         attn = getattr(self, 'attn_cache', None)
         self.attn_cache = None
         
-        outputs = (x, attn) if output_attentions else (x,)
+        outputs = (x, attn) if output_attentions else (x, None)
         return outputs
 
 
@@ -275,7 +275,7 @@ class NestedTensorBlock(Block):
             attn = getattr(self, 'attn_cache', None)
             self.attn_cache = None
 
-            outputs = (x, attn) if output_attentions else (x,)
+            outputs = (x, attn) if output_attentions else (x, None)
 
             return outputs
 

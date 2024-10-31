@@ -17,7 +17,7 @@ import torch.nn as nn
 import torch.utils.checkpoint
 from torch.nn.init import trunc_normal_
 
-from dinov2.layers import Mlp, PatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTensorBlock as Block
+from dinov2.layers import Mlp, PatchEmbed, SwiGLUFFNFused, MemEffAttention, Attention, NestedTensorBlock as Block
 
 
 logger = logging.getLogger("dinov2")
@@ -60,6 +60,7 @@ class DinoVisionTransformer(nn.Module):
         embed_layer=PatchEmbed,
         act_layer=nn.GELU,
         block_fn=Block,
+        num_attn_ret=0,
         ffn_layer="mlp",
         block_chunks=1,
         num_register_tokens=0,
@@ -133,9 +134,10 @@ class DinoVisionTransformer(nn.Module):
             ffn_layer = f
         else:
             raise NotImplementedError
-
+        
         blocks_list = [
-            block_fn(
+            Block(
+                attn_class=MemEffAttention if i < depth - num_attn_ret else Attention,
                 dim=embed_dim,
                 num_heads=num_heads,
                 mlp_ratio=mlp_ratio,
@@ -239,7 +241,7 @@ class DinoVisionTransformer(nn.Module):
         for blk in self.blocks:
             outputs = blk(x, output_attentions=output_attentions)
             x = outputs[0]
-            if output_attentions:
+            if outputs[1] is not None:
                 attn = outputs[1]
                 attn = attn[:, :, :, 1 + self.num_register_tokens:]
                 all_self_attentions = all_self_attentions + (attn,)
@@ -271,7 +273,7 @@ class DinoVisionTransformer(nn.Module):
         for blk in self.blocks:
             outputs = blk(x, output_attentions=output_attentions)
             x = outputs[0]
-            if output_attentions:
+            if outputs[1] is not None:
                 attn = outputs[1]
                 attn = attn[:, :, :, 1 + self.num_register_tokens:]
                 all_self_attentions = all_self_attentions + (attn,)
@@ -361,6 +363,7 @@ def vit_small(patch_size=16, num_register_tokens=0, **kwargs):
         depth=12,
         num_heads=6,
         mlp_ratio=4,
+        # num_attn_ret=1,
         # block_fn=partial(Block, attn_class=MemEffAttention),
         num_register_tokens=num_register_tokens,
         **kwargs,
