@@ -61,14 +61,14 @@ class Attention(nn.Module):
         attn = q @ k.transpose(-2, -1)
 
         attn_dist = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn_dist)
+        attn_dropout = self.attn_drop(attn_dist)
 
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = (attn_dropout @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
         
         # MODIFICATION (ian-chuang)
-        outputs = (x, attn_dist) if output_attentions else (x, None)
+        outputs = (x, attn) if output_attentions else (x, None)
         return outputs
         # END MODIFICATION (ian-chuang)
         

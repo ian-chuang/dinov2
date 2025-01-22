@@ -60,7 +60,7 @@ class DinoVisionTransformer(nn.Module):
         embed_layer=PatchEmbed,
         act_layer=nn.GELU,
         block_fn=Block,
-        num_attn_ret=0,
+        ret_attn_layers=[],
         ffn_layer="mlp",
         block_chunks=1,
         num_register_tokens=0,
@@ -103,6 +103,7 @@ class DinoVisionTransformer(nn.Module):
         self.num_register_tokens = num_register_tokens
         self.interpolate_antialias = interpolate_antialias
         self.interpolate_offset = interpolate_offset
+        self.ret_attn_layers = ret_attn_layers
 
         self.patch_embed = embed_layer(img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
@@ -135,9 +136,15 @@ class DinoVisionTransformer(nn.Module):
         else:
             raise NotImplementedError
         
+        
+        attn_mask = torch.zeros(depth, dtype=torch.bool)
+        attn_mask[ret_attn_layers] = True
+        
+
+                
         blocks_list = [
             Block(
-                attn_class=MemEffAttention if i < depth - num_attn_ret else Attention,
+                attn_class=Attention if attn_mask[i] else MemEffAttention,
                 dim=embed_dim,
                 num_heads=num_heads,
                 mlp_ratio=mlp_ratio,
@@ -233,50 +240,50 @@ class DinoVisionTransformer(nn.Module):
 
         return x
 
-    def forward_features_list(self, x_list, masks_list, output_attentions=False):
-        x = [self.prepare_tokens_with_masks(x, masks) for x, masks in zip(x_list, masks_list)]
+    # def forward_features_list(self, x_list, masks_list, output_attentions=False):
+    #     x = [self.prepare_tokens_with_masks(x, masks) for x, masks in zip(x_list, masks_list)]
 
-        all_self_attentions = () if output_attentions else None
+    #     all_self_attentions = () if output_attentions else None
 
-        for blk in self.blocks:
-            outputs = blk(x, output_attentions=output_attentions)
-            x = outputs[0]
-            if outputs[1] is not None:
-                attn = outputs[1]
-                attn = attn[:, :, :, 1 + self.num_register_tokens:]
-                all_self_attentions = all_self_attentions + (attn,)
+    #     for blk in self.blocks:
+    #         outputs = blk(x, output_attentions=output_attentions)
+    #         x = outputs[0]
+    #         if outputs[1] is not None:
+    #             attn = outputs[1]
+    #             attn = attn[:, :, :, 1 + self.num_register_tokens:]
+    #             all_self_attentions = all_self_attentions + (attn,)
 
-        all_x = x
-        output = []
-        for x, masks in zip(all_x, masks_list):
-            x_norm = self.norm(x)
-            output.append(
-                {
-                    "x_norm_clstoken": x_norm[:, 0],
-                    "x_norm_regtokens": x_norm[:, 1 : self.num_register_tokens + 1],
-                    "x_norm_patchtokens": x_norm[:, self.num_register_tokens + 1 :],
-                    "x_prenorm": x,
-                    "masks": masks,
-                    "attentions": all_self_attentions,
-                }
-            )
-        return output
+    #     all_x = x
+    #     output = []
+    #     for x, masks in zip(all_x, masks_list):
+    #         x_norm = self.norm(x)
+    #         output.append(
+    #             {
+    #                 "x_norm_clstoken": x_norm[:, 0],
+    #                 "x_norm_regtokens": x_norm[:, 1 : self.num_register_tokens + 1],
+    #                 "x_norm_patchtokens": x_norm[:, self.num_register_tokens + 1 :],
+    #                 "x_prenorm": x,
+    #                 "masks": masks,
+    #                 "attentions": all_self_attentions,
+    #             }
+    #         )
+    #     return output
 
     def forward_features(self, x, masks=None, output_attentions=False):
-        if isinstance(x, list):
-            return self.forward_features_list(x, masks, output_attentions)
+        # if isinstance(x, list):
+        #     return self.forward_features_list(x, masks, output_attentions)
 
         x = self.prepare_tokens_with_masks(x, masks)
 
-        all_self_attentions = () if output_attentions else None
+        all_self_attentions = () 
 
         for blk in self.blocks:
             outputs = blk(x, output_attentions=output_attentions)
             x = outputs[0]
-            if outputs[1] is not None:
-                attn = outputs[1]
-                attn = attn[:, :, :, 1 + self.num_register_tokens:]
-                all_self_attentions = all_self_attentions + (attn,)
+            attn = outputs[1]
+            all_self_attentions = all_self_attentions + (attn,)
+
+        all_self_attentions = [all_self_attentions[i][:, :, :, 1 + self.num_register_tokens:] for i in self.ret_attn_layers]
 
         x_norm = self.norm(x)
         return {
@@ -285,7 +292,7 @@ class DinoVisionTransformer(nn.Module):
             "x_norm_patchtokens": x_norm[:, self.num_register_tokens + 1 :],
             "x_prenorm": x,
             "masks": masks,
-            "attentions": all_self_attentions,
+            "attentions": None if len(all_self_attentions) == 0 else torch.stack(all_self_attentions, dim=1),
         }
 
     def _get_intermediate_layers_not_chunked(self, x, n=1):
