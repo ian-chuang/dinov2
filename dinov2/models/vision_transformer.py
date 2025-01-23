@@ -138,7 +138,7 @@ class DinoVisionTransformer(nn.Module):
         
         
         attn_mask = torch.zeros(depth, dtype=torch.bool)
-        attn_mask[ret_attn_layers] = True
+        if ret_attn_layers: attn_mask[ret_attn_layers] = True
         
 
                 
@@ -283,7 +283,8 @@ class DinoVisionTransformer(nn.Module):
             attn = outputs[1]
             all_self_attentions = all_self_attentions + (attn,)
 
-        all_self_attentions = [all_self_attentions[i][:, :, :, 1 + self.num_register_tokens:] for i in self.ret_attn_layers]
+        if self.ret_attn_layers:
+            all_self_attentions = [all_self_attentions[i][:, :, :, 1 + self.num_register_tokens:] for i in self.ret_attn_layers]
 
         x_norm = self.norm(x)
         return {
@@ -292,7 +293,7 @@ class DinoVisionTransformer(nn.Module):
             "x_norm_patchtokens": x_norm[:, self.num_register_tokens + 1 :],
             "x_prenorm": x,
             "masks": masks,
-            "attentions": None if len(all_self_attentions) == 0 else torch.stack(all_self_attentions, dim=1),
+            "attentions": None if not self.ret_attn_layers else torch.stack(all_self_attentions, dim=1),
         }
 
     def _get_intermediate_layers_not_chunked(self, x, n=1):
